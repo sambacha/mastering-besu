@@ -1,11 +1,7 @@
 {
   "title": "EIP1085 standard genesis schema",
   "type": "object",
-  "required": [
-    "version",
-    "params",
-    "genesis"
-  ],
+  "required": ["version", "params", "genesis"],
   "version": "2",
   "properties": {
     "version": {
@@ -28,9 +24,7 @@
     "Params": {
       "title": "Chain parameters",
       "type": "object",
-      "required": [
-        "chainId"
-      ],
+      "required": ["chainId"],
       "properties": {
         "miningMethod": {
           "title": "The mechanism by which blocks are mined",

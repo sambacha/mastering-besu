@@ -2,9 +2,9 @@
 
 ## Gas Limit
 
-### Hex & Integer 
+### Hex & Integer
 
-where "gasLimit" is: 
+where "gasLimit" is:
 
 3141592 == 0x2fefd8
 

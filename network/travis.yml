@@ -2,10 +2,9 @@ language: node_js
 node_js:
   - 12
 
-
 before_script:
-    - npm install 
+  - npm install
 
 script:
-    - npm run-script test
-    - npm run-script  coverage
+  - npm run-script test
+  - npm run-script  coverage

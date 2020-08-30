@@ -1,5 +1,3 @@
-
-
 Check, update, then interact
 Never delegatecall to untrusted contract
 Favor pull over push for external calls

@@ -1,10 +1,9 @@
 # Mastering Hyperledger Besu
 
-
-## Networking/Topology Vulnerabilities 
-
+## Networking/Topology Vulnerabilities
 
 ### Uncapped incoming connections
+
 Uncapped incoming connections: This vulnerability-
 ity was in the Geth client prior to its version 1.8 [35]. Each
 node can have a total number of maxpeers (with a default
@@ -19,9 +18,9 @@ vulnerability has been eliminated in Geth v1.8 by enforcing
 an upper limit on the number of incoming TCP connections
 to a node, with a default value ⌊maxpeers∕3⌋ = 8.
 
-
 ### Public peer selection
-Public peer selection (36): This vulnerability was detected in 
+
+Public peer selection (36): This vulnerability was detected in
 Geth client prior to its version 1.8 [35]. Recall that
 the Ethereum P2P network uses a modiﬁed Kademlia DHT
 [97] for node discovery and that each node maintains a routing
@@ -42,4 +41,3 @@ IDs into the victim node’s routing table [35].
 
 - Conﬁguring the listening port rather than using the default one.
 - Adding access control to ﬁlter remote RPC calls.
-

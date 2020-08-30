@@ -9,6 +9,7 @@ STOPSIGNAL signal
 The STOPSIGNAL instruction sets the system call signal that will be sent to the container to exit. This signal can be a valid unsigned number that matches a position in the kernel’s syscall table, for instance 9, or a signal name in the format SIGNAME, for instance SIGKILL.
 
 ## HEALTHCHECK
+
 The HEALTHCHECK instruction has two forms:
 
 HEALTHCHECK [OPTIONS] CMD command (check container health by running a command inside the container)
@@ -45,8 +46,8 @@ For example, to check every five minutes or so that a web-server is able to serv
 ```dockerfile
 HEALTHCHECK --interval=5m --timeout=3s \
   CMD curl -f http://localhost/ || exit 1
-  ```
-  
+```
+
 To help debug failing probes, any output text (UTF-8 encoded) that the command writes on stdout or stderr will be stored in the health status and can be queried with docker inspect. Such output should be kept short (only the first 4096 bytes are stored currently).
 
 When the health status of a container changes, a health_status event is generated with the new status.
