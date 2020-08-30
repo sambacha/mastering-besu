@@ -1,0 +1,614 @@
+From d4415f5e40fbd155adb3e85e4eae5c7db7832694 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?P=C3=A9ter=20Szil=C3=A1gyi?= <peterke@gmail.com>
+Date: Mon, 3 Dec 2018 16:50:59 +0200
+Subject: [PATCH] cmd/puppeth: chain import/export via wizard, minor polishes
+
+---
+ .../{puppeth_test.go => genesis_test.go}      |  22 ++-
+ cmd/puppeth/puppeth.go                        |  43 ++----
+ cmd/puppeth/wizard.go                         |  56 +++++---
+ cmd/puppeth/wizard_dashboard.go               |   4 +-
+ cmd/puppeth/wizard_ethstats.go                |   6 +-
+ cmd/puppeth/wizard_explorer.go                |   2 +-
+ cmd/puppeth/wizard_faucet.go                  |   8 +-
+ cmd/puppeth/wizard_genesis.go                 | 127 +++++++++++++-----
+ cmd/puppeth/wizard_intro.go                   |  16 ++-
+ cmd/puppeth/wizard_nginx.go                   |   4 +-
+ cmd/puppeth/wizard_node.go                    |   4 +-
+ cmd/puppeth/wizard_wallet.go                  |   2 +-
+ 12 files changed, 189 insertions(+), 105 deletions(-)
+ rename cmd/puppeth/{puppeth_test.go => genesis_test.go} (70%)
+
+diff --git a/cmd/puppeth/puppeth_test.go b/cmd/puppeth/genesis_test.go
+similarity index 70%
+rename from cmd/puppeth/puppeth_test.go
+rename to cmd/puppeth/genesis_test.go
+index ae0752d5493..83e73836057 100644
+--- a/cmd/puppeth/puppeth_test.go
++++ b/cmd/puppeth/genesis_test.go
+@@ -1,3 +1,19 @@
++// Copyright 2018 The go-ethereum Authors
++// This file is part of go-ethereum.
++//
++// go-ethereum is free software: you can redistribute it and/or modify
++// it under the terms of the GNU General Public License as published by
++// the Free Software Foundation, either version 3 of the License, or
++// (at your option) any later version.
++//
++// go-ethereum is distributed in the hope that it will be useful,
++// but WITHOUT ANY WARRANTY; without even the implied warranty of
++// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++// GNU General Public License for more details.
++//
++// You should have received a copy of the GNU General Public License
++// along with go-ethereum. If not, see <http://www.gnu.org/licenses/>.
++
+ package main
+ 
+ import (
+@@ -12,7 +28,8 @@ import (
+ 	"github.com/ethereum/go-ethereum/core"
+ )
+ 
+-func TestConverter_AlethStureby(t *testing.T) {
++// Tests the go-ethereum to Aleth chainspec conversion for the Stureby testnet.
++func TestAlethSturebyConverter(t *testing.T) {
+ 	blob, err := ioutil.ReadFile("testdata/stureby_geth.json")
+ 	if err != nil {
+ 		t.Fatalf("could not read file: %v", err)
+@@ -50,7 +67,8 @@ func TestConverter_AlethStureby(t *testing.T) {
+ 	}
+ }
+ 
+-func TestConverter_ParityStureby(t *testing.T) {
++// Tests the go-ethereum to Parity chainspec conversion for the Stureby testnet.
++func TestParitySturebyConverter(t *testing.T) {
+ 	blob, err := ioutil.ReadFile("testdata/stureby_geth.json")
+ 	if err != nil {
+ 		t.Fatalf("could not read file: %v", err)
+diff --git a/cmd/puppeth/puppeth.go b/cmd/puppeth/puppeth.go
+index 3af1751eaee..c3de5f93602 100644
+--- a/cmd/puppeth/puppeth.go
++++ b/cmd/puppeth/puppeth.go
+@@ -18,15 +18,11 @@
+ package main
+ 
+ import (
+-	"encoding/json"
+-	"io/ioutil"
+ 	"math/rand"
+ 	"os"
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/ethereum/go-ethereum/cmd/utils"
+-	"github.com/ethereum/go-ethereum/core"
+ 	"github.com/ethereum/go-ethereum/log"
+ 	"gopkg.in/urfave/cli.v1"
+ )
+@@ -47,46 +43,23 @@ func main() {
+ 			Usage: "log level to emit to the screen",
+ 		},
+ 	}
+-	app.Commands = []cli.Command{
+-		cli.Command{
+-			Action:    utils.MigrateFlags(convert),
+-			Name:      "convert",
+-			Usage:     "Convert from geth genesis into chainspecs for other nodes.",
+-			ArgsUsage: "<geth-genesis.json>",
+-		},
+-	}
+-	app.Action = func(c *cli.Context) error {
++	app.Before = func(c *cli.Context) error {
+ 		// Set up the logger to print everything and the random generator
+ 		log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(c.Int("loglevel")), log.StreamHandler(os.Stdout, log.TerminalFormat(true))))
+ 		rand.Seed(time.Now().UnixNano())
+ 
+-		network := c.String("network")
+-		if strings.Contains(network, " ") || strings.Contains(network, "-") || strings.ToLower(network) != network {
+-			log.Crit("No spaces, hyphens or capital letters allowed in network name")
+-		}
+-		// Start the wizard and relinquish control
+-		makeWizard(c.String("network")).run()
+ 		return nil
+ 	}
++	app.Action = runWizard
+ 	app.Run(os.Args)
+ }
+ 
+-func convert(ctx *cli.Context) error {
+-	// Ensure we have a source genesis
+-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.StreamHandler(os.Stdout, log.TerminalFormat(true))))
+-	if len(ctx.Args()) != 1 {
+-		utils.Fatalf("No geth genesis provided")
+-	}
+-	blob, err := ioutil.ReadFile(ctx.Args().First())
+-	if err != nil {
+-		utils.Fatalf("Could not read file: %v", err)
+-	}
+-
+-	var genesis core.Genesis
+-	if err := json.Unmarshal(blob, &genesis); err != nil {
+-		utils.Fatalf("Failed parsing genesis: %v", err)
++// runWizard start the wizard and relinquish control to it.
++func runWizard(c *cli.Context) error {
++	network := c.String("network")
++	if strings.Contains(network, " ") || strings.Contains(network, "-") || strings.ToLower(network) != network {
++		log.Crit("No spaces, hyphens or capital letters allowed in network name")
+ 	}
+-	basename := strings.TrimRight(ctx.Args().First(), ".json")
+-	convertGenesis(&genesis, basename, basename, []string{})
++	makeWizard(c.String("network")).run()
+ 	return nil
+ }
+diff --git a/cmd/puppeth/wizard.go b/cmd/puppeth/wizard.go
+index 42fc125e582..83536506c4c 100644
+--- a/cmd/puppeth/wizard.go
++++ b/cmd/puppeth/wizard.go
+@@ -23,6 +23,7 @@ import (
+ 	"io/ioutil"
+ 	"math/big"
+ 	"net"
++	"net/url"
+ 	"os"
+ 	"path/filepath"
+ 	"sort"
+@@ -104,40 +105,59 @@ func (w *wizard) readString() string {
+ 	}
+ }
+ 
+-// readYesNo reads a yes or no from stdin, returning boolean true for yes
+-func (w *wizard) readYesNo(def bool) bool {
++// readDefaultString reads a single line from stdin, trimming if from spaces. If
++// an empty line is entered, the default value is returned.
++func (w *wizard) readDefaultString(def string) string {
++	fmt.Printf("> ")
++	text, err := w.in.ReadString('\n')
++	if err != nil {
++		log.Crit("Failed to read user input", "err", err)
++	}
++	if text = strings.TrimSpace(text); text != "" {
++		return text
++	}
++	return def
++}
++
++// readDefaultYesNo reads a single line from stdin, trimming if from spaces and
++// interpreting it as a 'yes' or a 'no'. If an empty line is entered, the default
++// value is returned.
++func (w *wizard) readDefaultYesNo(def bool) bool {
+ 	for {
+ 		fmt.Printf("> ")
+ 		text, err := w.in.ReadString('\n')
+ 		if err != nil {
+ 			log.Crit("Failed to read user input", "err", err)
+ 		}
+-		text = strings.ToLower(strings.TrimSpace(text))
++		if text = strings.ToLower(strings.TrimSpace(text)); text == "" {
++			return def
++		}
+ 		if text == "y" || text == "yes" {
+ 			return true
+ 		}
+ 		if text == "n" || text == "no" {
+ 			return false
+ 		}
+-		if len(text) == 0 {
+-			return def
+-		}
+-		fmt.Println("Valid answers: y, yes, n, no or leave empty for default")
++		log.Error("Invalid input, expected 'y', 'yes', 'n', 'no' or empty")
+ 	}
+ }
+ 
+-// readDefaultString reads a single line from stdin, trimming if from spaces. If
+-// an empty line is entered, the default value is returned.
+-func (w *wizard) readDefaultString(def string) string {
+-	fmt.Printf("> ")
+-	text, err := w.in.ReadString('\n')
+-	if err != nil {
+-		log.Crit("Failed to read user input", "err", err)
+-	}
+-	if text = strings.TrimSpace(text); text != "" {
+-		return text
++// readURL reads a single line from stdin, trimming if from spaces and trying to
++// interpret it as a URL (http, https or file).
++func (w *wizard) readURL() *url.URL {
++	for {
++		fmt.Printf("> ")
++		text, err := w.in.ReadString('\n')
++		if err != nil {
++			log.Crit("Failed to read user input", "err", err)
++		}
++		uri, err := url.Parse(strings.TrimSpace(text))
++		if err != nil {
++			log.Error("Invalid input, expected URL", "err", err)
++			continue
++		}
++		return uri
+ 	}
+-	return def
+ }
+ 
+ // readInt reads a single line from stdin, trimming if from spaces, enforcing it
+diff --git a/cmd/puppeth/wizard_dashboard.go b/cmd/puppeth/wizard_dashboard.go
+index 1a01631ff45..8a8370845b6 100644
+--- a/cmd/puppeth/wizard_dashboard.go
++++ b/cmd/puppeth/wizard_dashboard.go
+@@ -137,14 +137,14 @@ func (w *wizard) deployDashboard() {
+ 	if w.conf.ethstats != "" {
+ 		fmt.Println()
+ 		fmt.Println("Include ethstats secret on dashboard (y/n)? (default = yes)")
+-		infos.trusted = w.readDefaultString("y") == "y"
++		infos.trusted = w.readDefaultYesNo(true)
+ 	}
+ 	// Try to deploy the dashboard container on the host
+ 	nocache := false
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the dashboard be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	if out, err := deployDashboard(client, w.network, &w.conf, infos, nocache); err != nil {
+ 		log.Error("Failed to deploy dashboard container", "err", err)
+diff --git a/cmd/puppeth/wizard_ethstats.go b/cmd/puppeth/wizard_ethstats.go
+index fb2529c2673..58ff3efbe98 100644
+--- a/cmd/puppeth/wizard_ethstats.go
++++ b/cmd/puppeth/wizard_ethstats.go
+@@ -67,11 +67,11 @@ func (w *wizard) deployEthstats() {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Keep existing IP %v blacklist (y/n)? (default = yes)\n", infos.banned)
+-		if w.readDefaultString("y") != "y" {
++		if !w.readDefaultYesNo(true) {
+ 			// The user might want to clear the entire list, although generally probably not
+ 			fmt.Println()
+ 			fmt.Printf("Clear out blacklist and start over (y/n)? (default = no)\n")
+-			if w.readDefaultString("n") != "n" {
++			if w.readDefaultYesNo(false) {
+ 				infos.banned = nil
+ 			}
+ 			// Offer the user to explicitly add/remove certain IP addresses
+@@ -106,7 +106,7 @@ func (w *wizard) deployEthstats() {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the ethstats be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	trusted := make([]string, 0, len(w.servers))
+ 	for _, client := range w.servers {
+diff --git a/cmd/puppeth/wizard_explorer.go b/cmd/puppeth/wizard_explorer.go
+index 413511c1c3a..a128fb9fb52 100644
+--- a/cmd/puppeth/wizard_explorer.go
++++ b/cmd/puppeth/wizard_explorer.go
+@@ -100,7 +100,7 @@ func (w *wizard) deployExplorer() {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the explorer be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	if out, err := deployExplorer(client, w.network, chain, infos, nocache); err != nil {
+ 		log.Error("Failed to deploy explorer container", "err", err)
+diff --git a/cmd/puppeth/wizard_faucet.go b/cmd/puppeth/wizard_faucet.go
+index 6f084089474..9068c1d30b5 100644
+--- a/cmd/puppeth/wizard_faucet.go
++++ b/cmd/puppeth/wizard_faucet.go
+@@ -81,7 +81,7 @@ func (w *wizard) deployFaucet() {
+ 	if infos.captchaToken != "" {
+ 		fmt.Println()
+ 		fmt.Println("Reuse previous reCaptcha API authorization (y/n)? (default = yes)")
+-		if w.readDefaultString("y") != "y" {
++		if !w.readDefaultYesNo(true) {
+ 			infos.captchaToken, infos.captchaSecret = "", ""
+ 		}
+ 	}
+@@ -89,7 +89,7 @@ func (w *wizard) deployFaucet() {
+ 		// No previous authorization (or old one discarded)
+ 		fmt.Println()
+ 		fmt.Println("Enable reCaptcha protection against robots (y/n)? (default = no)")
+-		if w.readDefaultString("n") == "n" {
++		if !w.readDefaultYesNo(false) {
+ 			log.Warn("Users will be able to requests funds via automated scripts")
+ 		} else {
+ 			// Captcha protection explicitly requested, read the site and secret keys
+@@ -132,7 +132,7 @@ func (w *wizard) deployFaucet() {
+ 		} else {
+ 			fmt.Println()
+ 			fmt.Printf("Reuse previous (%s) funding account (y/n)? (default = yes)\n", key.Address.Hex())
+-			if w.readDefaultString("y") != "y" {
++			if !w.readDefaultYesNo(true) {
+ 				infos.node.keyJSON, infos.node.keyPass = "", ""
+ 			}
+ 		}
+@@ -166,7 +166,7 @@ func (w *wizard) deployFaucet() {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the faucet be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	if out, err := deployFaucet(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
+ 		log.Error("Failed to deploy faucet container", "err", err)
+diff --git a/cmd/puppeth/wizard_genesis.go b/cmd/puppeth/wizard_genesis.go
+index 681a387dff3..95da5bd4f3c 100644
+--- a/cmd/puppeth/wizard_genesis.go
++++ b/cmd/puppeth/wizard_genesis.go
+@@ -20,9 +20,13 @@ import (
+ 	"bytes"
+ 	"encoding/json"
+ 	"fmt"
++	"io"
+ 	"io/ioutil"
+ 	"math/big"
+ 	"math/rand"
++	"net/http"
++	"os"
++	"path/filepath"
+ 	"time"
+ 
+ 	"github.com/ethereum/go-ethereum/common"
+@@ -40,11 +44,12 @@ func (w *wizard) makeGenesis() {
+ 		Difficulty: big.NewInt(524288),
+ 		Alloc:      make(core.GenesisAlloc),
+ 		Config: &params.ChainConfig{
+-			HomesteadBlock: big.NewInt(1),
+-			EIP150Block:    big.NewInt(2),
+-			EIP155Block:    big.NewInt(3),
+-			EIP158Block:    big.NewInt(3),
+-			ByzantiumBlock: big.NewInt(4),
++			HomesteadBlock:      big.NewInt(1),
++			EIP150Block:         big.NewInt(2),
++			EIP155Block:         big.NewInt(3),
++			EIP158Block:         big.NewInt(3),
++			ByzantiumBlock:      big.NewInt(4),
++			ConstantinopleBlock: big.NewInt(5),
+ 		},
+ 	}
+ 	// Figure out which consensus engine to choose
+@@ -116,7 +121,7 @@ func (w *wizard) makeGenesis() {
+ 	}
+ 	fmt.Println()
+ 	fmt.Println("Should the precompile-addresses (0x1 .. 0xff) be pre-funded with 1 wei? (advisable yes)")
+-	if w.readYesNo(true) {
++	if w.readDefaultYesNo(true) {
+ 		// Add a batch of precompile balances to avoid them getting deleted
+ 		for i := int64(0); i < 256; i++ {
+ 			genesis.Alloc[common.BigToAddress(big.NewInt(i))] = core.GenesisAccount{Balance: big.NewInt(1)}
+@@ -134,6 +139,53 @@ func (w *wizard) makeGenesis() {
+ 	w.conf.flush()
+ }
+ 
++// importGenesis imports a Geth genesis spec into puppeth.
++func (w *wizard) importGenesis() {
++	// Request the genesis JSON spec URL from the user
++	fmt.Println()
++	fmt.Println("Where's the genesis file? (local file or http/https url)")
++	url := w.readURL()
++
++	// Convert the various allowed URLs to a reader stream
++	var reader io.Reader
++
++	switch url.Scheme {
++	case "http", "https":
++		// Remote web URL, retrieve it via an HTTP client
++		res, err := http.Get(url.String())
++		if err != nil {
++			log.Error("Failed to retrieve remote genesis", "err", err)
++			return
++		}
++		defer res.Body.Close()
++		reader = res.Body
++
++	case "":
++		// Schemaless URL, interpret as a local file
++		file, err := os.Open(url.String())
++		if err != nil {
++			log.Error("Failed to open local genesis", "err", err)
++			return
++		}
++		defer file.Close()
++		reader = file
++
++	default:
++		log.Error("Unsupported genesis URL scheme", "scheme", url.Scheme)
++		return
++	}
++	// Parse the genesis file and inject it successful
++	var genesis core.Genesis
++	if err := json.NewDecoder(reader).Decode(&genesis); err != nil {
++		log.Error("Invalid genesis spec: %v", err)
++		return
++	}
++	log.Info("Imported genesis block")
++
++	w.conf.Genesis = &genesis
++	w.conf.flush()
++}
++
+ // manageGenesis permits the modification of chain configuration parameters in
+ // a genesis config and the export of the entire genesis spec.
+ func (w *wizard) manageGenesis() {
+@@ -168,7 +220,7 @@ func (w *wizard) manageGenesis() {
+ 		w.conf.Genesis.Config.ByzantiumBlock = w.readDefaultBigInt(w.conf.Genesis.Config.ByzantiumBlock)
+ 
+ 		fmt.Println()
+-		fmt.Printf("Which block should Constantinople come into effect? (default = %v)\n", w.conf.Genesis.Config.ByzantiumBlock)
++		fmt.Printf("Which block should Constantinople come into effect? (default = %v)\n", w.conf.Genesis.Config.ConstantinopleBlock)
+ 		w.conf.Genesis.Config.ConstantinopleBlock = w.readDefaultBigInt(w.conf.Genesis.Config.ConstantinopleBlock)
+ 
+ 		out, _ := json.MarshalIndent(w.conf.Genesis.Config, "", "  ")
+@@ -177,18 +229,38 @@ func (w *wizard) manageGenesis() {
+ 	case "2":
+ 		// Save whatever genesis configuration we currently have
+ 		fmt.Println()
+-		fmt.Printf("Which base filename to save the genesis specifications into? (default = %s)\n", w.network)
++		fmt.Printf("Which folder to save the genesis specs into? (default = current)\n")
++		fmt.Printf("  Will create %s.json, %s-aleth.json, %s-harmony.json, %s-parity.json\n", w.network, w.network, w.network, w.network)
++
++		folder := w.readDefaultString(".")
++		if err := os.MkdirAll(folder, 0755); err != nil {
++			log.Error("Failed to create spec folder", "folder", folder, "err", err)
++			return
++		}
+ 		out, _ := json.MarshalIndent(w.conf.Genesis, "", "  ")
+-		basename := w.readDefaultString(fmt.Sprintf("%s.json", w.network))
+ 
+-		gethJson := fmt.Sprintf("%s.json", basename)
++		// Export the native genesis spec used by puppeth and Geth
++		gethJson := filepath.Join(folder, fmt.Sprintf("%s.json", w.network))
+ 		if err := ioutil.WriteFile((gethJson), out, 0644); err != nil {
+ 			log.Error("Failed to save genesis file", "err", err)
++			return
+ 		}
+-		log.Info("Saved geth genesis as %v", gethJson)
+-		if err := convertGenesis(w.conf.Genesis, basename, w.network, w.conf.bootnodes); err != nil {
+-			log.Error("Conversion failed", "err", err)
++		log.Info("Saved native genesis chain spec", "path", gethJson)
++
++		// Export the genesis spec used by Aleth (formerly C++ Ethereum)
++		if spec, err := newAlethGenesisSpec(w.network, w.conf.Genesis); err != nil {
++			log.Error("Failed to create Aleth chain spec", "err", err)
++		} else {
++			saveGenesis(folder, w.network, "aleth", spec)
+ 		}
++		// Export the genesis spec used by Parity
++		if spec, err := newParityChainSpec(w.network, w.conf.Genesis, []string{}); err != nil {
++			log.Error("Failed to create Parity chain spec", "err", err)
++		} else {
++			saveGenesis(folder, w.network, "parity", spec)
++		}
++		// Export the genesis spec used by Harmony (formerly EthereumJ
++		saveGenesis(folder, w.network, "harmony", w.conf.Genesis)
+ 
+ 	case "3":
+ 		// Make sure we don't have any services running
+@@ -202,29 +274,18 @@ func (w *wizard) manageGenesis() {
+ 		w.conf.flush()
+ 	default:
+ 		log.Error("That's not something I can do")
++		return
+ 	}
+ }
+ 
+-func saveGenesis(basename, client string, spec interface{}) {
+-	filename := fmt.Sprintf("%s-%s.json", basename, client)
+-	out, _ := json.Marshal(spec)
+-	if err := ioutil.WriteFile(filename, out, 0644); err != nil {
+-		log.Error("failed to save genesis file", "client", client, "err", err)
+-	}
+-	log.Info("saved chainspec", "client", client, "filename", filename)
+-}
++// saveGenesis JSON encodes an arbitrary genesis spec into a pre-defined file.
++func saveGenesis(folder, network, client string, spec interface{}) {
++	path := filepath.Join(folder, fmt.Sprintf("%s-%s.json", network, client))
+ 
+-func convertGenesis(genesis *core.Genesis, basename string, network string, bootnodes []string) error {
+-	if spec, err := newAlethGenesisSpec(network, genesis); err == nil {
+-		saveGenesis(basename, "aleth", spec)
+-	} else {
+-		log.Error("failed to create chain spec", "client", "aleth", "err", err)
+-	}
+-	if spec, err := newParityChainSpec(network, genesis, []string{}); err == nil {
+-		saveGenesis(basename, "parity", spec)
+-	} else {
+-		log.Error("failed to create chain spec", "client", "parity", "err", err)
++	out, _ := json.Marshal(spec)
++	if err := ioutil.WriteFile(path, out, 0644); err != nil {
++		log.Error("Failed to save genesis file", "client", client, "err", err)
++		return
+ 	}
+-	saveGenesis(basename, "harmony", genesis)
+-	return nil
++	log.Info("Saved genesis chain spec", "client", client, "path", path)
+ }
+diff --git a/cmd/puppeth/wizard_intro.go b/cmd/puppeth/wizard_intro.go
+index 3db9a1087e4..75fb04b76f7 100644
+--- a/cmd/puppeth/wizard_intro.go
++++ b/cmd/puppeth/wizard_intro.go
+@@ -131,7 +131,20 @@ func (w *wizard) run() {
+ 
+ 		case choice == "2":
+ 			if w.conf.Genesis == nil {
+-				w.makeGenesis()
++				fmt.Println()
++				fmt.Println("What would you like to do? (default = create)")
++				fmt.Println(" 1. Create new genesis from scratch")
++				fmt.Println(" 2. Import already existing genesis")
++
++				choice := w.read()
++				switch {
++				case choice == "" || choice == "1":
++					w.makeGenesis()
++				case choice == "2":
++					w.importGenesis()
++				default:
++					log.Error("That's not something I can do")
++				}
+ 			} else {
+ 				w.manageGenesis()
+ 			}
+@@ -149,7 +162,6 @@ func (w *wizard) run() {
+ 			} else {
+ 				w.manageComponents()
+ 			}
+-
+ 		default:
+ 			log.Error("That's not something I can do")
+ 		}
+diff --git a/cmd/puppeth/wizard_nginx.go b/cmd/puppeth/wizard_nginx.go
+index 4eeae93a0b2..8397b7fd57f 100644
+--- a/cmd/puppeth/wizard_nginx.go
++++ b/cmd/puppeth/wizard_nginx.go
+@@ -41,12 +41,12 @@ func (w *wizard) ensureVirtualHost(client *sshClient, port int, def string) (str
+ 	// Reverse proxy is not running, offer to deploy a new one
+ 	fmt.Println()
+ 	fmt.Println("Allow sharing the port with other services (y/n)? (default = yes)")
+-	if w.readDefaultString("y") == "y" {
++	if w.readDefaultYesNo(true) {
+ 		nocache := false
+ 		if proxy != nil {
+ 			fmt.Println()
+ 			fmt.Printf("Should the reverse-proxy be rebuilt from scratch (y/n)? (default = no)\n")
+-			nocache = w.readDefaultString("n") != "n"
++			nocache = w.readDefaultYesNo(false)
+ 		}
+ 		if out, err := deployNginx(client, w.network, port, nocache); err != nil {
+ 			log.Error("Failed to deploy reverse-proxy", "err", err)
+diff --git a/cmd/puppeth/wizard_node.go b/cmd/puppeth/wizard_node.go
+index 49b10a023a4..e37297f6d62 100644
+--- a/cmd/puppeth/wizard_node.go
++++ b/cmd/puppeth/wizard_node.go
+@@ -126,7 +126,7 @@ func (w *wizard) deployNode(boot bool) {
+ 				} else {
+ 					fmt.Println()
+ 					fmt.Printf("Reuse previous (%s) signing account (y/n)? (default = yes)\n", key.Address.Hex())
+-					if w.readDefaultString("y") != "y" {
++					if !w.readDefaultYesNo(true) {
+ 						infos.keyJSON, infos.keyPass = "", ""
+ 					}
+ 				}
+@@ -165,7 +165,7 @@ func (w *wizard) deployNode(boot bool) {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the node be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	if out, err := deployNode(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
+ 		log.Error("Failed to deploy Ethereum node container", "err", err)
+diff --git a/cmd/puppeth/wizard_wallet.go b/cmd/puppeth/wizard_wallet.go
+index 7624d11e20e..ca1ea5bd259 100644
+--- a/cmd/puppeth/wizard_wallet.go
++++ b/cmd/puppeth/wizard_wallet.go
+@@ -96,7 +96,7 @@ func (w *wizard) deployWallet() {
+ 	if existed {
+ 		fmt.Println()
+ 		fmt.Printf("Should the wallet be built from scratch (y/n)? (default = no)\n")
+-		nocache = w.readDefaultString("n") != "n"
++		nocache = w.readDefaultYesNo(false)
+ 	}
+ 	if out, err := deployWallet(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
+ 		log.Error("Failed to deploy wallet container", "err", err)
