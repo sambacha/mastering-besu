@@ -1,13 +1,40 @@
+
 = Mastering Hyperledger Besu
+:data-uri:
+:url-home: https://besuchain.io
+:link-docs: https://besuchain.io[documentation]
+:imagesdir: images/
+
+
+image::cover.png[]
+
+
+== Introduction
+
+[quote, Random User, 'Telegram User, also known as #[Randy]']
+____
+If you don't know where you are going, any road will get you there.
+____
+
+
+
+[[goals]]
+[role="incremental"]
+* Basics of Hyperledger Besu
+* Advance Network Configurations
+* EVM and Governance
 
 == Networking/Topology Vulnerabilities
 
-=== Uncapped incoming connections
+:subject:
+
+=== Uncapped Incoming Connections
 
 Uncapped incoming connections: This vulnerability- ity was in the Geth client prior to its version 1.8 [35].
 Each node can have a total number of maxpeers (with a default value 25) connections at any point in time, and can initiate up to ⌊(1+maxpeers)∕2⌋ outgoing TCP connections with the other nodes.
 However, there was no upper limit on the number of incoming TCP connections initiated by the other nodes.
 This gives the attacker an opportunity to eclipse a victim by establishing an maxpeers many of incoming connections to a victim node, which has no outgoing connections.
+
 This vulnerability has been eliminated in Geth v1.8 by enforcing an upper limit on the number of incoming TCP connections to a node, with a default value ⌊maxpeers∕3⌋ = 8.
 
 === Public peer selection
