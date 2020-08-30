@@ -6,7 +6,7 @@
 :imagesdir: images/
 
 
-image::cover.png[]
+image::Bitmappng.png[Cover,900,role="center"]
 
 
 == Introduction
